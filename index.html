@@ -672,6 +672,7 @@ let settings = {
 };
 let currentNetlist = '';
 let currentSchema = '';
+let conversationHistory = [];
 let simChart = null;
 let activeTab = 'results';
 
@@ -747,6 +748,32 @@ function escapeHtml(text) {
   return text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
 }
 
+function isFollowUpQuestion(text) {
+  if (!currentNetlist) return false;
+  const t = text.trim().toLowerCase();
+  const questionWords = ['why', 'what', 'how', 'when', 'where', 'which', 'who',
+    'почему', 'зачем', 'чего', 'почему', 'как', 'что', 'какой', 'какая', 'какое', 'объясни', 'explain'];
+  if (t.endsWith('?')) return true;
+  if (questionWords.some(w => t.startsWith(w))) return true;
+  return false;
+}
+
+async function handleFollowUp(text) {
+  const systemPrompt = `You are OhmNova AI Engine — an expert electronics design assistant.
+You are in an ongoing design session. The current circuit netlist is:
+
+${currentNetlist}
+
+Answer the user's question about this circuit concisely and technically. 2-4 sentences.`;
+
+  conversationHistory.push({ role: 'user', content: text });
+
+  const reply = await callAI(systemPrompt, conversationHistory);
+
+  conversationHistory.push({ role: 'assistant', content: reply });
+  return reply;
+}
+
 async function sendMessage() {
   const input = document.getElementById('userInput');
   const text = input.value.trim();
@@ -766,36 +793,54 @@ async function sendMessage() {
   setStatus('busy', 'Generating circuit...');
 
   try {
-    // ── Step 1: Generate netlist + schema ──
-    const { netlist, schema, description } = await generateCircuit(text);
-    currentNetlist = netlist;
-    currentSchema = schema;
+    if (isFollowUpQuestion(text)) {
+      // ── Follow-up: answer in context of current circuit ──
+      const reply = await handleFollowUp(text);
+      loadingMsg.remove();
+      addMessage('ai', reply);
+      setStatus('ok', 'Done');
+    } else {
+      // ── New design request ──
 
-    loadingMsg.innerHTML = '<span class="spinner"></span> Running SPICE simulation...';
-    setStatus('busy', 'Simulating...');
+      // ── Step 1: Generate netlist + schema ──
+      const { netlist, schema, description } = await generateCircuit(text);
+      currentNetlist = netlist;
+      currentSchema = schema;
 
-    // ── Step 2: Simulate ──
-    const simResult = await runSimulation(netlist);
+      loadingMsg.innerHTML = '<span class="spinner"></span> Running SPICE simulation...';
+      setStatus('busy', 'Simulating...');
 
-    loadingMsg.innerHTML = '<span class="spinner"></span> Analyzing results...';
-    setStatus('busy', 'Analyzing...');
+      // ── Step 2: Simulate ──
+      const simResult = await runSimulation(netlist);
 
-    // ── Step 3: Analyze ──
-    const analysis = await analyzeResults(text, netlist, simResult);
+      loadingMsg.innerHTML = '<span class="spinner"></span> Analyzing results...';
+      setStatus('busy', 'Analyzing...');
 
-    // ── Update UI ──
-    loadingMsg.remove();
-    addMessage('ai', description + '\n\nSimulation complete ✓ See Results tab for details.');
+      // ── Step 3: Analyze ──
+      const analysis = await analyzeResults(text, netlist, simResult);
 
-    showResults(simResult, analysis);
-    updateNetlistTab(netlist);
-    updateSchemaTab(schema);
+      const aiReply = description + '\n\nSimulation complete ✓ See Results tab for details.';
 
-    // Auto-switch to results
-    const resultsTab = document.querySelector('.tab');
-    switchTab('results', resultsTab);
+      // ── Update conversation history ──
+      conversationHistory = [
+        { role: 'user', content: text },
+        { role: 'assistant', content: aiReply },
+      ];
 
-    setStatus('ok', 'Done');
+      // ── Update UI ──
+      loadingMsg.remove();
+      addMessage('ai', aiReply);
+
+      showResults(simResult, analysis);
+      updateNetlistTab(netlist);
+      updateSchemaTab(schema);
+
+      // Auto-switch to results
+      const resultsTab = document.querySelector('.tab');
+      switchTab('results', resultsTab);
+
+      setStatus('ok', 'Done');
+    }
   } catch(err) {
     loadingMsg.remove();
     addMessage('ai', '⚠ ' + (err.message || 'Something went wrong. Check your API key in Settings.'));
@@ -933,7 +978,11 @@ Analysis type: ${simResult.type}`;
 }
 
 // ── Anthropic API ──
-async function callAI(systemPrompt, userMessage) {
+async function callAI(systemPrompt, userMessageOrHistory) {
+  const messages = Array.isArray(userMessageOrHistory)
+    ? userMessageOrHistory
+    : [{ role: 'user', content: userMessageOrHistory }];
+
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -946,7 +995,7 @@ async function callAI(systemPrompt, userMessage) {
       model: settings.model,
       max_tokens: 2000,
       system: systemPrompt,
-      messages: [{ role: 'user', content: userMessage }],
+      messages,
     }),
   });
 
