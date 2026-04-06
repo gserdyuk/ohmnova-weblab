@@ -1,0 +1,1071 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OhmNova WebLab</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    /* ── Reset & Base ── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --navy:    #0D1B2A;
+      --teal:    #0F7B6C;
+      --tealL:   #1D9E8A;
+      --tealXL:  #9FE1CB;
+      --amber:   #EF9F27;
+      --beige:   #F5F0E8;
+      --white:   #FFFFFF;
+      --gray:    #4A5E56;
+      --grayL:   #C8BFA8;
+      --red:     #C0392B;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--beige);
+      color: var(--navy);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Header ── */
+    header {
+      background: var(--navy);
+      padding: 0 24px;
+      height: 56px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+
+    .logo {
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+    }
+
+    .logo-name {
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--white);
+      letter-spacing: -0.3px;
+    }
+
+    .logo-tag {
+      font-size: 12px;
+      color: var(--tealXL);
+      font-style: italic;
+    }
+
+    .header-actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    .btn {
+      padding: 6px 14px;
+      border-radius: 6px;
+      border: none;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+      transition: opacity 0.15s;
+    }
+    .btn:hover { opacity: 0.85; }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .btn-primary   { background: var(--teal);  color: var(--white); }
+    .btn-secondary { background: transparent; color: var(--tealXL); border: 1px solid var(--tealXL); }
+    .btn-amber     { background: var(--amber); color: var(--navy); }
+    .btn-sm        { padding: 4px 10px; font-size: 12px; }
+
+    /* ── Layout ── */
+    .app {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+      height: calc(100vh - 56px);
+    }
+
+    /* ── Left Panel: Chat ── */
+    .panel-chat {
+      width: 360px;
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      border-right: 1px solid var(--grayL);
+      background: var(--white);
+    }
+
+    .panel-title {
+      padding: 12px 16px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--gray);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      border-bottom: 1px solid var(--grayL);
+      background: var(--beige);
+    }
+
+    .chat-messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .msg {
+      max-width: 92%;
+      padding: 10px 14px;
+      border-radius: 12px;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    .msg-user {
+      background: var(--teal);
+      color: var(--white);
+      align-self: flex-end;
+      border-bottom-right-radius: 4px;
+    }
+
+    .msg-ai {
+      background: var(--beige);
+      color: var(--navy);
+      align-self: flex-start;
+      border-bottom-left-radius: 4px;
+      border: 1px solid var(--grayL);
+    }
+
+    .msg-ai .msg-label {
+      font-size: 11px;
+      color: var(--teal);
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    .msg-system {
+      align-self: center;
+      background: transparent;
+      color: var(--gray);
+      font-size: 12px;
+      font-style: italic;
+      text-align: center;
+    }
+
+    .chat-input-area {
+      padding: 12px;
+      border-top: 1px solid var(--grayL);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .examples {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .example-btn {
+      font-size: 11px;
+      padding: 4px 8px;
+      background: var(--beige);
+      border: 1px solid var(--grayL);
+      border-radius: 12px;
+      cursor: pointer;
+      color: var(--teal);
+      font-weight: 500;
+      transition: background 0.15s;
+    }
+    .example-btn:hover { background: var(--tealXL); }
+
+    .input-row {
+      display: flex;
+      gap: 8px;
+    }
+
+    textarea {
+      flex: 1;
+      padding: 10px 12px;
+      border: 1px solid var(--grayL);
+      border-radius: 8px;
+      font-size: 14px;
+      font-family: inherit;
+      resize: none;
+      background: var(--beige);
+      color: var(--navy);
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    textarea:focus { border-color: var(--teal); }
+
+    /* ── Right Panel: Results ── */
+    .panel-results {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .results-tabs {
+      display: flex;
+      border-bottom: 1px solid var(--grayL);
+      background: var(--white);
+      padding: 0 16px;
+    }
+
+    .tab {
+      padding: 12px 16px;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--gray);
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      transition: all 0.15s;
+    }
+    .tab:hover { color: var(--teal); }
+    .tab.active { color: var(--teal); border-bottom-color: var(--teal); }
+
+    .results-content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px;
+    }
+
+    /* ── Netlist ── */
+    .netlist-box {
+      background: var(--navy);
+      border-radius: 8px;
+      padding: 16px;
+      font-family: 'Courier New', monospace;
+      font-size: 13px;
+      color: var(--tealXL);
+      line-height: 1.6;
+      white-space: pre-wrap;
+      overflow-x: auto;
+      margin-bottom: 16px;
+    }
+
+    /* ── ASCII Schema ── */
+    .schema-box {
+      background: var(--white);
+      border: 1px solid var(--grayL);
+      border-radius: 8px;
+      padding: 16px;
+      font-family: 'Courier New', monospace;
+      font-size: 13px;
+      color: var(--navy);
+      line-height: 1.7;
+      white-space: pre;
+      overflow-x: auto;
+      margin-bottom: 16px;
+    }
+
+    /* ── Chart ── */
+    .chart-container {
+      background: var(--white);
+      border: 1px solid var(--grayL);
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+
+    .chart-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--gray);
+      margin-bottom: 12px;
+    }
+
+    /* ── Analysis ── */
+    .analysis-box {
+      background: var(--white);
+      border: 1px solid var(--grayL);
+      border-left: 3px solid var(--teal);
+      border-radius: 8px;
+      padding: 16px;
+      font-size: 14px;
+      line-height: 1.7;
+      color: var(--navy);
+      margin-bottom: 16px;
+    }
+
+    .analysis-box h4 {
+      color: var(--teal);
+      font-size: 13px;
+      margin-bottom: 8px;
+    }
+
+    /* ── Metrics ── */
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+
+    .metric-card {
+      background: var(--white);
+      border: 1px solid var(--grayL);
+      border-radius: 8px;
+      padding: 12px;
+      text-align: center;
+    }
+
+    .metric-label {
+      font-size: 11px;
+      color: var(--gray);
+      margin-bottom: 4px;
+    }
+
+    .metric-value {
+      font-size: 20px;
+      font-weight: 600;
+      color: var(--teal);
+    }
+
+    .metric-unit {
+      font-size: 11px;
+      color: var(--gray);
+    }
+
+    /* ── Empty state ── */
+    .empty-state {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      color: var(--gray);
+      text-align: center;
+      gap: 12px;
+    }
+
+    .empty-icon {
+      font-size: 48px;
+      opacity: 0.4;
+    }
+
+    .empty-title {
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--navy);
+    }
+
+    .empty-sub {
+      font-size: 13px;
+      max-width: 280px;
+      line-height: 1.5;
+    }
+
+    /* ── Settings Modal ── */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(13, 27, 42, 0.6);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+    }
+    .modal-overlay.open { display: flex; }
+
+    .modal {
+      background: var(--white);
+      border-radius: 12px;
+      padding: 24px;
+      width: 420px;
+      max-width: 90vw;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+    }
+
+    .modal-title {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--navy);
+      margin-bottom: 20px;
+    }
+
+    .form-group {
+      margin-bottom: 16px;
+    }
+
+    label {
+      display: block;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--gray);
+      margin-bottom: 6px;
+    }
+
+    input[type="text"],
+    input[type="password"],
+    select {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid var(--grayL);
+      border-radius: 8px;
+      font-size: 14px;
+      font-family: inherit;
+      background: var(--beige);
+      color: var(--navy);
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    input:focus, select:focus { border-color: var(--teal); }
+
+    .radio-group {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .radio-option {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 14px;
+      color: var(--navy);
+      cursor: pointer;
+    }
+
+    .modal-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-top: 20px;
+    }
+
+    /* ── Status bar ── */
+    .status-bar {
+      height: 28px;
+      background: var(--navy);
+      display: flex;
+      align-items: center;
+      padding: 0 16px;
+      gap: 16px;
+      font-size: 11px;
+      color: var(--tealXL);
+      flex-shrink: 0;
+    }
+
+    .status-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--gray);
+    }
+    .status-dot.ok   { background: #27ae60; }
+    .status-dot.busy { background: var(--amber); }
+    .status-dot.err  { background: var(--red); }
+
+    /* ── Spinner ── */
+    .spinner {
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      border: 2px solid var(--grayL);
+      border-top-color: var(--teal);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Scrollbar ── */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--grayL); border-radius: 3px; }
+
+    /* ── Section header ── */
+    .section-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+    .section-label {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--gray);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .warning-box {
+      background: #fff8e1;
+      border: 1px solid var(--amber);
+      border-radius: 8px;
+      padding: 12px 16px;
+      font-size: 13px;
+      color: #7B5200;
+      margin-bottom: 16px;
+    }
+  </style>
+</head>
+<body>
+
+<!-- ══════════════════════════════════════════════
+     HEADER
+══════════════════════════════════════════════ -->
+<header>
+  <div class="logo">
+    <span class="logo-name">OhmNova</span>
+    <span class="logo-tag">EDA: From AI Augmentation to AI Discovery</span>
+  </div>
+  <div class="header-actions">
+    <button class="btn btn-secondary btn-sm" onclick="openSettings()">⚙ Settings</button>
+  </div>
+</header>
+
+<!-- ══════════════════════════════════════════════
+     MAIN APP
+══════════════════════════════════════════════ -->
+<div class="app">
+
+  <!-- ── Left: Chat Panel ── -->
+  <div class="panel-chat">
+    <div class="panel-title">Design Dialogue</div>
+
+    <div class="chat-messages" id="chatMessages">
+      <div class="msg msg-ai">
+        <div class="msg-label">AI Engine</div>
+        Hello! Describe a circuit you want to design. I will generate the SPICE netlist, run a simulation, and explain the results.<br><br>
+        <em>Example: "1W audio amplifier, 8Ω load, 5V supply"</em>
+      </div>
+    </div>
+
+    <div class="chat-input-area">
+      <div class="examples">
+        <span class="example-btn" onclick="fillExample('1W audio amplifier, 8Ω load, 5V supply')">🔊 Amplifier</span>
+        <span class="example-btn" onclick="fillExample('Low-pass RC filter, cutoff 1kHz')">〜 RC Filter</span>
+        <span class="example-btn" onclick="fillExample('5V to 3.3V voltage divider')">⚡ Divider</span>
+        <span class="example-btn" onclick="fillExample('NPN transistor switch, 12V load')">🔌 Switch</span>
+      </div>
+      <div class="input-row">
+        <textarea id="userInput" rows="3" placeholder="Describe your circuit..." 
+          onkeydown="handleKey(event)"></textarea>
+        <button class="btn btn-primary" id="sendBtn" onclick="sendMessage()">▶</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Right: Results Panel ── -->
+  <div class="panel-results">
+    <div class="results-tabs">
+      <div class="tab active" onclick="switchTab('results', this)">Results</div>
+      <div class="tab" onclick="switchTab('netlist', this)">Netlist</div>
+      <div class="tab" onclick="switchTab('schema', this)">Schema</div>
+    </div>
+
+    <div class="results-content" id="resultsContent">
+      <div class="empty-state" id="emptyState">
+        <div class="empty-icon">⚡</div>
+        <div class="empty-title">Ready to Design</div>
+        <div class="empty-sub">Describe a circuit in the chat. AI will generate, simulate, and analyze it for you.</div>
+      </div>
+
+      <!-- Results Tab -->
+      <div id="tabResults" style="display:none">
+        <div class="metrics-grid" id="metricsGrid"></div>
+        <div class="chart-container" id="chartContainer" style="display:none">
+          <div class="chart-title" id="chartTitle">Simulation Output</div>
+          <canvas id="simChart" height="200"></canvas>
+        </div>
+        <div class="analysis-box" id="analysisBox" style="display:none">
+          <h4>🤖 AI Analysis</h4>
+          <div id="analysisText"></div>
+        </div>
+      </div>
+
+      <!-- Netlist Tab -->
+      <div id="tabNetlist" style="display:none">
+        <div class="section-header">
+          <span class="section-label">SPICE Netlist</span>
+          <button class="btn btn-secondary btn-sm" onclick="copyNetlist()">Copy</button>
+        </div>
+        <div class="netlist-box" id="netlistBox">— no netlist yet —</div>
+      </div>
+
+      <!-- Schema Tab -->
+      <div id="tabSchema" style="display:none">
+        <div class="section-header">
+          <span class="section-label">ASCII Schematic</span>
+        </div>
+        <div class="schema-box" id="schemaBox">— no schematic yet —</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════
+     STATUS BAR
+══════════════════════════════════════════════ -->
+<div class="status-bar">
+  <div class="status-dot" id="statusDot"></div>
+  <span id="statusText">Ready</span>
+  <span style="margin-left:auto; color: var(--gray)">ohmnova.ai · WebLab v0.1</span>
+</div>
+
+<!-- ══════════════════════════════════════════════
+     SETTINGS MODAL
+══════════════════════════════════════════════ -->
+<div class="modal-overlay" id="settingsModal">
+  <div class="modal">
+    <div class="modal-title">⚙ Settings</div>
+
+    <div class="form-group">
+      <label>Anthropic API Key</label>
+      <input type="password" id="apiKeyInput" placeholder="sk-ant-..." />
+      <div style="font-size:11px; color:var(--gray); margin-top:4px">
+        Stored in browser only. Never sent anywhere except Anthropic API.
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label>Display</label>
+      <div class="radio-group">
+        <label class="radio-option">
+          <input type="radio" name="display" value="both" checked /> Both netlist + ASCII schematic
+        </label>
+        <label class="radio-option">
+          <input type="radio" name="display" value="netlist" /> Netlist only
+        </label>
+        <label class="radio-option">
+          <input type="radio" name="display" value="schema" /> ASCII schematic only
+        </label>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label>Model</label>
+      <select id="modelSelect">
+        <option value="claude-sonnet-4-6">claude-sonnet-4-6 (recommended)</option>
+        <option value="claude-opus-4-6">claude-opus-4-6 (more capable)</option>
+        <option value="claude-haiku-4-5-20251001">claude-haiku-4-5 (faster)</option>
+      </select>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeSettings()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveSettings()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════
+     JAVASCRIPT
+══════════════════════════════════════════════ -->
+<script>
+// ── State ──
+let settings = {
+  apiKey: '',
+  display: 'both',
+  model: 'claude-sonnet-4-6',
+};
+let currentNetlist = '';
+let currentSchema = '';
+let simChart = null;
+let activeTab = 'results';
+
+// ── Init ──
+(function init() {
+  const saved = localStorage.getItem('ohmnova_settings');
+  if (saved) {
+    try { settings = { ...settings, ...JSON.parse(saved) }; } catch(e) {}
+  }
+  // Check for ?key= in URL (Variant B - will add later)
+  const urlKey = new URLSearchParams(window.location.search).get('key');
+  if (urlKey) settings.apiKey = urlKey;
+
+  if (!settings.apiKey) {
+    setTimeout(() => openSettings(), 500);
+  }
+  setStatus('ready');
+})();
+
+// ── Settings ──
+function openSettings() {
+  document.getElementById('apiKeyInput').value = settings.apiKey;
+  document.getElementById('modelSelect').value = settings.model;
+  document.querySelectorAll('input[name="display"]').forEach(r => {
+    r.checked = r.value === settings.display;
+  });
+  document.getElementById('settingsModal').classList.add('open');
+}
+
+function closeSettings() {
+  document.getElementById('settingsModal').classList.remove('open');
+}
+
+function saveSettings() {
+  settings.apiKey = document.getElementById('apiKeyInput').value.trim();
+  settings.model = document.getElementById('modelSelect').value;
+  settings.display = document.querySelector('input[name="display"]:checked').value;
+  localStorage.setItem('ohmnova_settings', JSON.stringify(settings));
+  closeSettings();
+  setStatus('ready');
+}
+
+// ── Chat ──
+function fillExample(text) {
+  document.getElementById('userInput').value = text;
+  document.getElementById('userInput').focus();
+}
+
+function handleKey(e) {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendMessage();
+  }
+}
+
+function addMessage(role, text) {
+  const container = document.getElementById('chatMessages');
+  const div = document.createElement('div');
+  div.className = `msg msg-${role}`;
+  if (role === 'ai') {
+    div.innerHTML = `<div class="msg-label">AI Engine</div>${escapeHtml(text)}`;
+  } else if (role === 'system') {
+    div.innerHTML = text;
+  } else {
+    div.textContent = text;
+  }
+  container.appendChild(div);
+  container.scrollTop = container.scrollHeight;
+  return div;
+}
+
+function escapeHtml(text) {
+  return text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
+}
+
+async function sendMessage() {
+  const input = document.getElementById('userInput');
+  const text = input.value.trim();
+  if (!text) return;
+
+  if (!settings.apiKey) {
+    openSettings();
+    return;
+  }
+
+  input.value = '';
+  document.getElementById('sendBtn').disabled = true;
+  addMessage('user', text);
+
+  // Show loading
+  const loadingMsg = addMessage('system', '<span class="spinner"></span> AI Engine thinking...');
+  setStatus('busy', 'Generating circuit...');
+
+  try {
+    // ── Step 1: Generate netlist + schema ──
+    const { netlist, schema, description } = await generateCircuit(text);
+    currentNetlist = netlist;
+    currentSchema = schema;
+
+    loadingMsg.innerHTML = '<span class="spinner"></span> Running SPICE simulation...';
+    setStatus('busy', 'Simulating...');
+
+    // ── Step 2: Simulate ──
+    const simResult = await runSimulation(netlist);
+
+    loadingMsg.innerHTML = '<span class="spinner"></span> Analyzing results...';
+    setStatus('busy', 'Analyzing...');
+
+    // ── Step 3: Analyze ──
+    const analysis = await analyzeResults(text, netlist, simResult);
+
+    // ── Update UI ──
+    loadingMsg.remove();
+    addMessage('ai', description + '\n\nSimulation complete ✓ See Results tab for details.');
+
+    showResults(simResult, analysis);
+    updateNetlistTab(netlist);
+    updateSchemaTab(schema);
+
+    // Auto-switch to results
+    const resultsTab = document.querySelector('.tab');
+    switchTab('results', resultsTab);
+
+    setStatus('ok', 'Done');
+  } catch(err) {
+    loadingMsg.remove();
+    addMessage('ai', '⚠ ' + (err.message || 'Something went wrong. Check your API key in Settings.'));
+    setStatus('err', 'Error');
+  }
+
+  document.getElementById('sendBtn').disabled = false;
+}
+
+// ── AI: Generate Circuit ──
+async function generateCircuit(userPrompt) {
+  const displayMode = settings.display;
+
+  const systemPrompt = `You are OhmNova AI Engine — an expert electronics design assistant.
+When given a circuit requirement, you respond with a JSON object containing:
+1. "netlist": a valid SPICE netlist (ngspice compatible)
+2. "schema": an ASCII art schematic showing the circuit clearly with component values
+3. "description": a brief plain-language explanation of the design choices (2-3 sentences)
+4. "analysis_type": one of "tran", "ac", or "dc" depending on what makes sense
+
+Rules for netlist:
+- Always include .title line
+- Always include .end
+- Use standard ngspice component syntax
+- For transient: include .tran and .end
+- For AC: include .ac and .end  
+- Include a .measure or comment with expected key metrics
+
+Rules for schema:
+- Use ASCII art with +, -, |, /, components in brackets like [R1 10k]
+- Label all components with values
+- Show power rails (Vcc, GND)
+
+Respond ONLY with valid JSON, no markdown, no explanation outside JSON.`;
+
+  const response = await callAI(systemPrompt, userPrompt);
+
+  let parsed;
+  try {
+    // Clean possible markdown code fences
+    const clean = response.replace(/```json|```/g, '').trim();
+    parsed = JSON.parse(clean);
+  } catch(e) {
+    throw new Error('AI returned invalid JSON. Try rephrasing your request.');
+  }
+
+  return {
+    netlist: parsed.netlist || '',
+    schema: parsed.schema || '',
+    description: parsed.description || '',
+    analysisType: parsed.analysis_type || 'tran',
+  };
+}
+
+// ── Simulation ──
+async function runSimulation(netlist) {
+  // For now: parse netlist and generate realistic mock data
+  // Real ngspice WASM integration will replace this
+  return simulateMock(netlist);
+}
+
+function simulateMock(netlist) {
+  // Detect analysis type from netlist
+  const lower = netlist.toLowerCase();
+  const isTran = lower.includes('.tran');
+  const isAC = lower.includes('.ac');
+  const isDC = lower.includes('.dc');
+
+  if (isAC) {
+    // Frequency response mock
+    const points = 100;
+    const freqs = [], gains = [];
+    for (let i = 0; i < points; i++) {
+      const f = 10 * Math.pow(10, i * 4 / points); // 10Hz to 100kHz
+      freqs.push(f);
+      // Simple RC low-pass shape
+      const fc = 1000;
+      const gain = 20 * Math.log10(1 / Math.sqrt(1 + Math.pow(f/fc, 2)));
+      gains.push(gain + (Math.random() - 0.5) * 0.5);
+    }
+    return {
+      type: 'ac',
+      x: freqs,
+      y: gains,
+      xLabel: 'Frequency (Hz)',
+      yLabel: 'Gain (dB)',
+      metrics: {
+        'f₋₃dB': { value: '1.02', unit: 'kHz' },
+        'DC Gain': { value: '0.0', unit: 'dB' },
+        'Roll-off': { value: '-20', unit: 'dB/dec' },
+      }
+    };
+  } else {
+    // Transient mock — sine wave output
+    const points = 200;
+    const time = [], vout = [];
+    for (let i = 0; i < points; i++) {
+      const t = i * 0.05e-3; // 10ms total
+      time.push(t * 1000); // to ms
+      const v = 2.5 * Math.sin(2 * Math.PI * 1000 * t) * (1 - Math.exp(-t / 1e-3));
+      vout.push(v + (Math.random() - 0.5) * 0.05);
+    }
+    return {
+      type: 'tran',
+      x: time,
+      y: vout,
+      xLabel: 'Time (ms)',
+      yLabel: 'Output Voltage (V)',
+      metrics: {
+        'Vout peak': { value: '2.48', unit: 'V' },
+        'Frequency': { value: '1.00', unit: 'kHz' },
+        'THD': { value: '0.8', unit: '%' },
+        'Power': { value: '385', unit: 'mW' },
+      }
+    };
+  }
+}
+
+// ── AI: Analyze Results ──
+async function analyzeResults(userRequest, netlist, simResult) {
+  const metricsStr = Object.entries(simResult.metrics || {})
+    .map(([k,v]) => `${k}: ${v.value} ${v.unit}`).join(', ');
+
+  const systemPrompt = `You are OhmNova AI Engine analyzing SPICE simulation results.
+Be concise, technical but clear. 3-5 sentences. Mention:
+1. Whether the circuit meets the requirements
+2. Key metrics and what they mean
+3. Any concerns or suggestions for improvement`;
+
+  const userMsg = `User requested: "${userRequest}"
+Simulation metrics: ${metricsStr}
+Analysis type: ${simResult.type}`;
+
+  return await callAI(systemPrompt, userMsg);
+}
+
+// ── Anthropic API ──
+async function callAI(systemPrompt, userMessage) {
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': settings.apiKey,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true',
+    },
+    body: JSON.stringify({
+      model: settings.model,
+      max_tokens: 2000,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: userMessage }],
+    }),
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error?.message || `API error ${response.status}`);
+  }
+
+  const data = await response.json();
+  return data.content?.[0]?.text || '';
+}
+
+// ── UI: Show Results ──
+function showResults(simResult, analysis) {
+  document.getElementById('emptyState').style.display = 'none';
+  document.getElementById('tabResults').style.display = 'block';
+
+  // Metrics
+  const grid = document.getElementById('metricsGrid');
+  grid.innerHTML = '';
+  Object.entries(simResult.metrics || {}).forEach(([label, m]) => {
+    grid.innerHTML += `
+      <div class="metric-card">
+        <div class="metric-label">${label}</div>
+        <div class="metric-value">${m.value}</div>
+        <div class="metric-unit">${m.unit}</div>
+      </div>`;
+  });
+
+  // Chart
+  const chartContainer = document.getElementById('chartContainer');
+  chartContainer.style.display = 'block';
+  document.getElementById('chartTitle').textContent =
+    simResult.type === 'ac' ? 'Frequency Response' : 'Transient Response';
+
+  if (simChart) simChart.destroy();
+  const ctx = document.getElementById('simChart').getContext('2d');
+  simChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: simResult.x.map(v =>
+        simResult.type === 'ac' ? v.toFixed(0) : v.toFixed(2)
+      ),
+      datasets: [{
+        label: simResult.yLabel,
+        data: simResult.y,
+        borderColor: '#0F7B6C',
+        backgroundColor: 'rgba(15,123,108,0.08)',
+        borderWidth: 1.5,
+        pointRadius: 0,
+        fill: true,
+        tension: 0.3,
+      }]
+    },
+    options: {
+      responsive: true,
+      animation: { duration: 400 },
+      plugins: { legend: { display: false } },
+      scales: {
+        x: {
+          title: { display: true, text: simResult.xLabel, color: '#4A5E56' },
+          ticks: { maxTicksLimit: 8, color: '#4A5E56' },
+          grid: { color: 'rgba(200,191,168,0.4)' },
+        },
+        y: {
+          title: { display: true, text: simResult.yLabel, color: '#4A5E56' },
+          ticks: { color: '#4A5E56' },
+          grid: { color: 'rgba(200,191,168,0.4)' },
+        }
+      }
+    }
+  });
+
+  // Analysis
+  document.getElementById('analysisBox').style.display = 'block';
+  document.getElementById('analysisText').innerHTML = escapeHtml(analysis);
+}
+
+function updateNetlistTab(netlist) {
+  document.getElementById('netlistBox').textContent = netlist || '— no netlist —';
+}
+
+function updateSchemaTab(schema) {
+  document.getElementById('schemaBox').textContent = schema || '— no schematic —';
+}
+
+function copyNetlist() {
+  navigator.clipboard.writeText(currentNetlist);
+}
+
+// ── Tabs ──
+function switchTab(tab, el) {
+  activeTab = tab;
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+
+  ['tabResults', 'tabNetlist', 'tabSchema'].forEach(id => {
+    document.getElementById(id).style.display = 'none';
+  });
+
+  const map = { results: 'tabResults', netlist: 'tabNetlist', schema: 'tabSchema' };
+  const target = document.getElementById(map[tab]);
+  if (target) {
+    target.style.display = 'block';
+    // Hide empty state when switching to results with data
+    if (tab === 'results' && currentNetlist) {
+      document.getElementById('emptyState').style.display = 'none';
+    }
+  }
+}
+
+// ── Status ──
+function setStatus(state, text) {
+  const dot = document.getElementById('statusDot');
+  const txt = document.getElementById('statusText');
+  dot.className = 'status-dot ' + (state === 'ready' ? '' : state);
+  txt.textContent = text || (state === 'ready' ? 'Ready' : state === 'ok' ? 'Done' : state);
+}
+</script>
+
+</body>
+</html>
