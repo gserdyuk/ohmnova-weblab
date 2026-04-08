@@ -565,6 +565,7 @@
       <div class="tab active" onclick="switchTab('results', this)">Results</div>
       <div class="tab" onclick="switchTab('netlist', this)">Netlist</div>
       <div class="tab" onclick="switchTab('schema', this)">Schema</div>
+      <div class="tab" onclick="switchTab('console', this)">Console</div>
     </div>
 
     <div class="results-content" id="resultsContent">
@@ -602,6 +603,15 @@
           <span class="section-label">ASCII Schematic</span>
         </div>
         <div class="schema-box" id="schemaBox">— no schematic yet —</div>
+      </div>
+
+      <!-- Console Tab -->
+      <div id="tabConsole" style="display:none">
+        <div class="section-header">
+          <span class="section-label">Console</span>
+          <button class="btn btn-secondary btn-sm" onclick="clearConsole()">Clear</button>
+        </div>
+        <div class="netlist-box" id="consoleBox" style="min-height:300px; font-size:12px; color:#9FE1CB">— no output yet —</div>
       </div>
     </div>
   </div>
@@ -1052,13 +1062,53 @@ function _simulateMock(netlist) {
   }
 }
 
+// ── Console log ──
+function consoleLog(text, type) {
+  const box = document.getElementById('consoleBox');
+  if (box.textContent === '— no output yet —') box.textContent = '';
+  const colors = { info: '#9FE1CB', warn: '#EF9F27', err: '#e74c3c', dim: '#4A5E56' };
+  const color = colors[type] || colors.info;
+  box.innerHTML += `<span style="color:${color}">${escapeHtml(text)}</span>\n`;
+  box.scrollTop = box.scrollHeight;
+}
+
+function clearConsole() {
+  document.getElementById('consoleBox').innerHTML = '— no output yet —';
+}
+
 // ── Simulation entry point ──
 async function runSimulation(netlist) {
+  clearConsole();
+  consoleLog('=== NETLIST ===', 'dim');
+  consoleLog(netlist, 'dim');
+  consoleLog('', 'dim');
+
   if (settings.simMode === 'ngspice') {
-    const lines = await _runNgspice(netlist);
-    return _parseSimOutput(lines);
+    consoleLog('=== MODE: ngspice WASM ===', 'warn');
+    consoleLog('Loading ngspice.js + ngspice.wasm...', 'info');
+    let lines;
+    try {
+      lines = await _runNgspice(netlist);
+    } catch(e) {
+      consoleLog('ERROR: ' + e.message, 'err');
+      throw e;
+    }
+    consoleLog('=== ngspice stdout ===', 'warn');
+    lines.forEach(l => consoleLog(l, 'info'));
+    consoleLog('=== END ===', 'warn');
+    try {
+      const result = _parseSimOutput(lines);
+      consoleLog(`Parsed OK — ${result.x.length} data points, type: ${result.type}`, 'info');
+      return result;
+    } catch(e) {
+      consoleLog('PARSE ERROR: ' + e.message, 'err');
+      throw e;
+    }
   } else {
-    return _simulateMock(netlist);
+    consoleLog('=== MODE: Mock simulation ===', 'warn');
+    const result = _simulateMock(netlist);
+    consoleLog(`Mock OK — ${result.x.length} points, type: ${result.type}`, 'info');
+    return result;
   }
 }
 
@@ -1191,11 +1241,11 @@ function switchTab(tab, el) {
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   el.classList.add('active');
 
-  ['tabResults', 'tabNetlist', 'tabSchema'].forEach(id => {
+  ['tabResults', 'tabNetlist', 'tabSchema', 'tabConsole'].forEach(id => {
     document.getElementById(id).style.display = 'none';
   });
 
-  const map = { results: 'tabResults', netlist: 'tabNetlist', schema: 'tabSchema' };
+  const map = { results: 'tabResults', netlist: 'tabNetlist', schema: 'tabSchema', console: 'tabConsole' };
   const target = document.getElementById(map[tab]);
   if (target) {
     target.style.display = 'block';
