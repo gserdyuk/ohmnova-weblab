@@ -655,6 +655,21 @@
       </select>
     </div>
 
+    <div class="form-group">
+      <label>Simulation Engine</label>
+      <div class="radio-group">
+        <label class="radio-option">
+          <input type="radio" name="simMode" value="mock" checked /> Mock (instant, demo data)
+        </label>
+        <label class="radio-option">
+          <input type="radio" name="simMode" value="ngspice" /> ngspice WASM (real, ~20 s first run)
+        </label>
+      </div>
+      <div style="font-size:11px; color:var(--gray); margin-top:4px">
+        ngspice requires ngspice.js + ngspice.wasm in the same folder.
+      </div>
+    </div>
+
     <div class="modal-actions">
       <button class="btn btn-secondary" onclick="closeSettings()">Cancel</button>
       <button class="btn btn-primary" onclick="saveSettings()">Save</button>
@@ -671,6 +686,7 @@ let settings = {
   apiKey: '',
   display: 'both',
   model: 'claude-sonnet-4-6',
+  simMode: 'mock',
 };
 let currentNetlist = '';
 let currentSchema = '';
@@ -700,6 +716,9 @@ function openSettings() {
   document.querySelectorAll('input[name="display"]').forEach(r => {
     r.checked = r.value === settings.display;
   });
+  document.querySelectorAll('input[name="simMode"]').forEach(r => {
+    r.checked = r.value === settings.simMode;
+  });
   document.getElementById('settingsModal').classList.add('open');
 }
 
@@ -711,6 +730,7 @@ function saveSettings() {
   settings.apiKey = document.getElementById('apiKeyInput').value.trim();
   settings.model = document.getElementById('modelSelect').value;
   settings.display = document.querySelector('input[name="display"]:checked').value;
+  settings.simMode = document.querySelector('input[name="simMode"]:checked').value;
   localStorage.setItem('ohmnova_settings', JSON.stringify(settings));
   closeSettings();
   setStatus('ready');
@@ -773,8 +793,10 @@ async function sendMessage() {
     currentNetlist = netlist;
     currentSchema = schema;
 
-    loadingMsg.innerHTML = '<span class="spinner"></span> Loading ngspice WASM (~4 MB, first run may take 20–30 s)...';
-    setStatus('busy', 'Loading ngspice...');
+    loadingMsg.innerHTML = settings.simMode === 'ngspice'
+      ? '<span class="spinner"></span> Loading ngspice WASM (~4 MB, first run may take 20–30 s)...'
+      : '<span class="spinner"></span> Running simulation...';
+    setStatus('busy', settings.simMode === 'ngspice' ? 'Loading ngspice...' : 'Simulating...');
 
     // ── Step 2: Simulate ──
     const simResult = await runSimulation(netlist);
@@ -1005,10 +1027,39 @@ function _parseSimOutput(lines) {
   }
 }
 
+// ── Mock simulator (instant demo data) ──
+function _simulateMock(netlist) {
+  const lower = netlist.toLowerCase();
+  const isAC = lower.includes('ac dec') || lower.includes('.ac');
+  if (isAC) {
+    const x = [], y = [];
+    for (let i = 0; i < 100; i++) {
+      const f = 10 * Math.pow(10, i * 4 / 100);
+      x.push(f);
+      y.push(20 * Math.log10(1 / Math.sqrt(1 + Math.pow(f / 1000, 2))));
+    }
+    return { type: 'ac', x, y, xLabel: 'Frequency (Hz)', yLabel: 'Gain (dB)',
+      metrics: { 'f₋₃dB': { value: '1.00', unit: 'kHz' }, 'DC Gain': { value: '0.0', unit: 'dB' }, 'Roll-off': { value: '-20', unit: 'dB/dec' } } };
+  } else {
+    const x = [], y = [];
+    for (let i = 0; i < 200; i++) {
+      const t = i * 0.05e-3;
+      x.push(t * 1000);
+      y.push(2.5 * Math.sin(2 * Math.PI * 1000 * t) * (1 - Math.exp(-t / 1e-3)));
+    }
+    return { type: 'tran', x, y, xLabel: 'Time (ms)', yLabel: 'Output Voltage (V)',
+      metrics: { 'Vout peak': { value: '2.48', unit: 'V' }, 'Frequency': { value: '1.00', unit: 'kHz' }, 'THD': { value: '0.8', unit: '%' } } };
+  }
+}
+
 // ── Simulation entry point ──
 async function runSimulation(netlist) {
-  const lines = await _runNgspice(netlist);
-  return _parseSimOutput(lines);
+  if (settings.simMode === 'ngspice') {
+    const lines = await _runNgspice(netlist);
+    return _parseSimOutput(lines);
+  } else {
+    return _simulateMock(netlist);
+  }
 }
 
 // ── AI: Analyze Results ──
