@@ -773,8 +773,8 @@ async function sendMessage() {
     currentNetlist = netlist;
     currentSchema = schema;
 
-    loadingMsg.innerHTML = '<span class="spinner"></span> Running SPICE simulation...';
-    setStatus('busy', 'Simulating...');
+    loadingMsg.innerHTML = '<span class="spinner"></span> Loading ngspice WASM (~4 MB, first run may take 20–30 s)...';
+    setStatus('busy', 'Loading ngspice...');
 
     // ── Step 2: Simulate ──
     const simResult = await runSimulation(netlist);
@@ -911,8 +911,8 @@ function _runNgspice(netlist) {
     var worker = _createSimWorker();
     var timer = setTimeout(function() {
       worker.terminate();
-      reject(new Error('Simulation timed out (30 s). Check your netlist .control block.'));
-    }, 30000);
+      reject(new Error('Simulation timed out (120 s). Check your netlist .control block.'));
+    }, 120000);
 
     worker.onmessage = function(e) {
       clearTimeout(timer);
