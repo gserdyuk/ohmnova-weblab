@@ -811,18 +811,34 @@ async function generateCircuit(userPrompt) {
 
   const systemPrompt = `You are OhmNova AI Engine — an expert electronics design assistant.
 When given a circuit requirement, you respond with a JSON object containing:
-1. "netlist": a valid SPICE netlist (ngspice compatible)
+1. "netlist": a valid ngspice batch-mode netlist
 2. "schema": an ASCII art schematic showing the circuit clearly with component values
 3. "description": a brief plain-language explanation of the design choices (2-3 sentences)
 4. "analysis_type": one of "tran", "ac", or "dc" depending on what makes sense
 
 Rules for netlist:
-- Always include .title line
-- Always include .end
-- Use standard ngspice component syntax
-- For transient: include .tran and .end
-- For AC: include .ac and .end  
-- Include a .measure or comment with expected key metrics
+- Always include .title line at the top
+- Always include .end at the bottom
+- Use standard ngspice syntax
+- ALWAYS include a .control / .endc block with simulation commands and a print statement
+- In .control block:
+  * Transient: "tran [timestep] [stoptime]" then "print v(out)" (or the relevant output node)
+  * AC:        "ac dec 100 [fstart] [fstop]" then "print vdb(out)"
+  * DC:        "dc [source] [start] [stop] [step]" then "print v(out)"
+- Name the output node "out" whenever possible so the parser can find it
+- GND is always node 0
+- Do NOT use .tran / .ac / .dc outside the .control block
+
+Example of correct netlist structure:
+.title RC Low-pass Filter
+V1 in 0 AC 1 SIN(0 1 1000)
+R1 in out 1k
+C1 out 0 1u
+.control
+tran 0.01ms 10ms
+print v(out)
+.endc
+.end
 
 Rules for schema:
 - Use ASCII art with +, -, |, /, components in brackets like [R1 10k]
@@ -850,68 +866,147 @@ Respond ONLY with valid JSON, no markdown, no explanation outside JSON.`;
   };
 }
 
-// ── Simulation ──
-async function runSimulation(netlist) {
-  // For now: parse netlist and generate realistic mock data
-  // Real ngspice WASM integration will replace this
-  return simulateMock(netlist);
+// ── ngspice WASM via Web Worker ──
+
+// Absolute URL to ngspice.js (must live next to index.html)
+const NGSPICE_URL = new URL('./ngspice.js', location.href).href;
+
+function _createSimWorker() {
+  // Each simulation gets a fresh Worker → fresh ngspice instance
+  const code = `
+self.onmessage = function(e) {
+  var netlist = e.data;
+  var out = [];
+
+  self.Module = {
+    arguments: ['-b', 'circuit.cir'],
+    preRun: [function() {
+      FS.writeFile('/circuit.cir', netlist);
+    }],
+    print: function(t) { out.push(t); },
+    printErr: function() {},
+    postRun: [function() {
+      self.postMessage({ ok: true, lines: out });
+    }],
+    onAbort: function(w) {
+      self.postMessage({ ok: false, error: 'ngspice abort: ' + w });
+    }
+  };
+
+  try {
+    importScripts('${NGSPICE_URL}');
+  } catch(e) {
+    self.postMessage({ ok: false, error: 'Cannot load ngspice.js — make sure the file is in the same folder as index.html and the page is served over HTTP(S), not file://.' });
+  }
+};
+`;
+  const blob = new Blob([code], { type: 'application/javascript' });
+  return new Worker(URL.createObjectURL(blob));
 }
 
-function simulateMock(netlist) {
-  // Detect analysis type from netlist
-  const lower = netlist.toLowerCase();
-  const isTran = lower.includes('.tran');
-  const isAC = lower.includes('.ac');
-  const isDC = lower.includes('.dc');
+function _runNgspice(netlist) {
+  return new Promise(function(resolve, reject) {
+    var worker = _createSimWorker();
+    var timer = setTimeout(function() {
+      worker.terminate();
+      reject(new Error('Simulation timed out (30 s). Check your netlist .control block.'));
+    }, 30000);
+
+    worker.onmessage = function(e) {
+      clearTimeout(timer);
+      worker.terminate();
+      if (e.data.ok) resolve(e.data.lines);
+      else reject(new Error(e.data.error));
+    };
+    worker.onerror = function(e) {
+      clearTimeout(timer);
+      worker.terminate();
+      reject(new Error(e.message || 'Worker error'));
+    };
+    worker.postMessage(netlist);
+  });
+}
+
+function _parseSimOutput(lines) {
+  // ngspice "print" output format:
+  //   Index    time          v(out)
+  //   0        0.000e+00     0.000e+00
+  //   1        1.000e-05     3.141e-02
+  var headers = null;
+  var rows = [];
+
+  for (var i = 0; i < lines.length; i++) {
+    var t = lines[i].trim();
+    if (!t) continue;
+    if (/^Index\s+/i.test(t)) {
+      headers = t.split(/\s+/);
+      continue;
+    }
+    if (headers && /^\d+\s/.test(t)) {
+      var vals = t.split(/\s+/).map(Number);
+      if (vals.length >= 3 && !vals.some(isNaN)) rows.push(vals);
+    }
+  }
+
+  if (!headers || rows.length === 0) {
+    throw new Error(
+      'No simulation data found.\n' +
+      'ngspice output:\n' + lines.slice(0, 20).join('\n')
+    );
+  }
+
+  // col 0 = Index, col 1 = x-axis (time/freq), col 2 = signal
+  var xRaw  = rows.map(function(r){ return r[1]; });
+  var yRaw  = rows.map(function(r){ return r[2]; });
+  var xName = (headers[1] || '').toLowerCase();
+  var yName = headers[2] || 'signal';
+  var isAC  = xName.indexOf('freq') !== -1;
 
   if (isAC) {
-    // Frequency response mock
-    const points = 100;
-    const freqs = [], gains = [];
-    for (let i = 0; i < points; i++) {
-      const f = 10 * Math.pow(10, i * 4 / points); // 10Hz to 100kHz
-      freqs.push(f);
-      // Simple RC low-pass shape
-      const fc = 1000;
-      const gain = 20 * Math.log10(1 / Math.sqrt(1 + Math.pow(f/fc, 2)));
-      gains.push(gain + (Math.random() - 0.5) * 0.5);
+    // vdb() already in dB; plain v() needs conversion
+    var y = yName.toLowerCase().indexOf('db') !== -1
+      ? yRaw
+      : yRaw.map(function(v){ return 20 * Math.log10(Math.abs(v) || 1e-15); });
+
+    var yMax = Math.max.apply(null, y);
+    var thresh = yMax - 3;
+    var f3 = null;
+    for (var j = 1; j < xRaw.length; j++) {
+      if (y[j-1] > thresh && y[j] <= thresh) { f3 = xRaw[j]; break; }
     }
-    return {
-      type: 'ac',
-      x: freqs,
-      y: gains,
-      xLabel: 'Frequency (Hz)',
-      yLabel: 'Gain (dB)',
-      metrics: {
-        'f₋₃dB': { value: '1.02', unit: 'kHz' },
-        'DC Gain': { value: '0.0', unit: 'dB' },
-        'Roll-off': { value: '-20', unit: 'dB/dec' },
-      }
+    var metrics = { 'DC Gain': { value: yMax.toFixed(1), unit: 'dB' }, 'Roll-off': { value: '-20', unit: 'dB/dec' } };
+    if (f3) metrics['f₋₃dB'] = {
+      value: f3 >= 1000 ? (f3/1000).toFixed(2) : f3.toFixed(0),
+      unit:  f3 >= 1000 ? 'kHz' : 'Hz'
     };
+    return { type: 'ac', x: xRaw, y: y, xLabel: 'Frequency (Hz)', yLabel: yName + ' (dB)', metrics: metrics };
+
   } else {
-    // Transient mock — sine wave output
-    const points = 200;
-    const time = [], vout = [];
-    for (let i = 0; i < points; i++) {
-      const t = i * 0.05e-3; // 10ms total
-      time.push(t * 1000); // to ms
-      const v = 2.5 * Math.sin(2 * Math.PI * 1000 * t) * (1 - Math.exp(-t / 1e-3));
-      vout.push(v + (Math.random() - 0.5) * 0.05);
-    }
-    return {
-      type: 'tran',
-      x: time,
-      y: vout,
-      xLabel: 'Time (ms)',
-      yLabel: 'Output Voltage (V)',
-      metrics: {
-        'Vout peak': { value: '2.48', unit: 'V' },
-        'Frequency': { value: '1.00', unit: 'kHz' },
-        'THD': { value: '0.8', unit: '%' },
-        'Power': { value: '385', unit: 'mW' },
-      }
+    // Transient — convert time s → ms for display
+    var xMs  = xRaw.map(function(v){ return v * 1000; });
+    var yMax2 = Math.max.apply(null, yRaw);
+    var yMin  = Math.min.apply(null, yRaw);
+    // Estimate frequency from zero crossings
+    var zc = 0;
+    for (var k = 1; k < yRaw.length; k++) if (yRaw[k-1] < 0 && yRaw[k] >= 0) zc++;
+    var dur  = xRaw[xRaw.length - 1];
+    var freq = dur > 0 ? zc / dur : 0;
+    var metrics2 = {
+      'Vout max': { value: yMax2.toFixed(3), unit: 'V' },
+      'Vout min': { value: yMin.toFixed(3),  unit: 'V' }
     };
+    if (freq > 5) metrics2['Frequency'] = {
+      value: freq >= 1000 ? (freq/1000).toFixed(2) : freq.toFixed(0),
+      unit:  freq >= 1000 ? 'kHz' : 'Hz'
+    };
+    return { type: 'tran', x: xMs, y: yRaw, xLabel: 'Time (ms)', yLabel: yName + ' (V)', metrics: metrics2 };
   }
+}
+
+// ── Simulation entry point ──
+async function runSimulation(netlist) {
+  const lines = await _runNgspice(netlist);
+  return _parseSimOutput(lines);
 }
 
 // ── AI: Analyze Results ──
