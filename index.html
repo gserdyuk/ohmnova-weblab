@@ -154,6 +154,24 @@
       margin-bottom: 4px;
     }
 
+    .msg-discussion {
+      background: #0a1520;
+      color: #c8d8e8;
+      align-self: flex-start;
+      border-bottom-left-radius: 4px;
+      border-left: 3px solid var(--amber);
+      max-width: 92%;
+      padding: 10px 14px;
+      border-radius: 12px;
+    }
+
+    .msg-discussion .msg-label {
+      font-size: 11px;
+      color: var(--amber);
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
     .msg-system {
       align-self: center;
       background: transparent;
@@ -764,15 +782,20 @@ function handleKey(e) {
   }
 }
 
-function addMessage(role, text) {
+function addMessage(role, text, variant) {
   const container = document.getElementById('chatMessages');
   const div = document.createElement('div');
-  div.className = `msg msg-${role}`;
-  if (role === 'ai') {
+  if (role === 'ai' && variant === 'discussion') {
+    div.className = 'msg msg-discussion';
+    div.innerHTML = `<div class="msg-label">Discussion</div>${escapeHtml(text)}`;
+  } else if (role === 'ai') {
+    div.className = 'msg msg-ai';
     div.innerHTML = `<div class="msg-label">AI Engine</div>${escapeHtml(text)}`;
   } else if (role === 'system') {
+    div.className = 'msg msg-system';
     div.innerHTML = text;
   } else {
+    div.className = `msg msg-${role}`;
     div.textContent = text;
   }
   container.appendChild(div);
@@ -802,44 +825,55 @@ async function sendMessage() {
 
   // Show loading
   const loadingMsg = addMessage('system', '<span class="spinner"></span> AI Engine thinking...');
-  setStatus('busy', isRefinement ? 'Refining circuit...' : 'Generating circuit...');
+  setStatus('busy', 'Thinking...');
 
   try {
-    // ── Step 1: Generate / refine netlist + schema ──
-    const { netlist, schema, description } = await generateCircuit(text, isRefinement);
-    currentNetlist = netlist;
-    currentSchema = schema;
-    isRefinementMode = true;
+    // ── Step 1: Classify intent + generate/refine/discuss ──
+    const result = await generateCircuit(text, isRefinement);
 
-    loadingMsg.innerHTML = settings.simMode === 'ngspice'
-      ? '<span class="spinner"></span> Loading ngspice WASM (~4 MB, first run may take 20–30 s)...'
-      : '<span class="spinner"></span> Running simulation...';
-    setStatus('busy', settings.simMode === 'ngspice' ? 'Loading ngspice...' : 'Simulating...');
+    if (result.type === 'discussion') {
+      // ── Discussion branch: answer question, no simulation ──
+      loadingMsg.remove();
+      const answer = result.answer || '(No answer returned — try rephrasing your question.)';
+      addMessage('ai', answer, 'discussion');
+      setStatus('ok', 'Done');
 
-    // ── Step 2: Simulate ──
-    const simResult = await runSimulation(netlist);
+    } else {
+      // ── Design branch: simulate and show results ──
+      currentNetlist = result.netlist;
+      currentSchema  = result.schema;
+      isRefinementMode = true;
 
-    loadingMsg.innerHTML = '<span class="spinner"></span> Analyzing results...';
-    setStatus('busy', 'Analyzing...');
+      loadingMsg.innerHTML = settings.simMode === 'ngspice'
+        ? '<span class="spinner"></span> Loading ngspice WASM (~4 MB, first run may take 20–30 s)...'
+        : '<span class="spinner"></span> Running simulation...';
+      setStatus('busy', settings.simMode === 'ngspice' ? 'Loading ngspice...' : 'Simulating...');
 
-    // ── Step 3: Analyze ──
-    const analysis = await analyzeResults(text, netlist, simResult);
+      // ── Step 2: Simulate ──
+      const simResult = await runSimulation(result.netlist);
 
-    // ── Update UI ──
-    loadingMsg.remove();
-    const prefix = isRefinement ? '[Modified] ' : '';
-    addMessage('ai', prefix + description + '\n\nSimulation complete ✓ See Results tab for details.');
+      loadingMsg.innerHTML = '<span class="spinner"></span> Analyzing results...';
+      setStatus('busy', 'Analyzing...');
 
-    showResults(simResult, analysis);
-    updateNetlistTab(netlist);
-    updateSchemaTab(schema);
+      // ── Step 3: Analyze ──
+      const analysis = await analyzeResults(text, result.netlist, simResult);
 
-    // Auto-switch to results
-    const resultsTab = document.querySelector('.tab');
-    switchTab('results', resultsTab);
+      // ── Update UI ──
+      loadingMsg.remove();
+      const prefix = isRefinement ? '[Modified] ' : '';
+      addMessage('ai', prefix + result.description + '\n\nSimulation complete ✓ See Results tab for details.');
 
-    setStatus('ok', 'Done');
-    updateRefinementBadge();
+      showResults(simResult, analysis);
+      updateNetlistTab(result.netlist);
+      updateSchemaTab(result.schema);
+
+      // Auto-switch to results
+      const resultsTab = document.querySelector('.tab');
+      switchTab('results', resultsTab);
+
+      setStatus('ok', 'Done');
+      updateRefinementBadge();
+    }
   } catch(err) {
     loadingMsg.remove();
     addMessage('ai', '⚠ ' + (err.message || 'Something went wrong. Check your API key in Settings.'));
@@ -914,7 +948,18 @@ Rules for schema:
 - Label all components with values
 - Show power rails (Vcc, GND)
 
-Respond ONLY with valid JSON, no markdown, no explanation outside JSON.`;
+You must decide the response TYPE based on the user message:
+
+- If the user is requesting a circuit to be built, designed, or simulated → respond with:
+  {"type":"design","netlist":"...","schema":"...","description":"...","analysis_type":"tran|ac|dc"}
+
+- If the user is asking a conceptual question, requesting an explanation, asking about trade-offs,
+  asking "how does X work", "why does Y happen", "what are the ways to...", or any question that
+  does NOT require generating or modifying a circuit → respond with:
+  {"type":"discussion","answer":"..."}
+  where "answer" is a concise, technically accurate plain-text response (no markdown).
+
+Respond ONLY with valid JSON, no markdown fences, no explanation outside the JSON.`;
 
   const refinementPrompt = `You are OhmNova AI Engine — an expert electronics design assistant modifying an existing circuit.
 The user will provide the current netlist and a modification request. Apply the requested changes and respond with a JSON object containing:
@@ -942,7 +987,21 @@ Rules for schema:
 - Label all components with values
 - Show power rails (Vcc, GND)
 
-Respond ONLY with valid JSON, no markdown, no explanation outside JSON.`;
+You must decide the response TYPE based on the user message:
+
+- If the user is requesting a change to the circuit — adding/removing/modifying components,
+  changing values, swapping topology, or running a different simulation → respond with:
+  {"type":"design","netlist":"...","schema":"...","description":"...","analysis_type":"tran|ac|dc"}
+  Output the COMPLETE modified netlist (not a diff).
+
+- If the user is asking a conceptual, explanatory, or theoretical question — even about the
+  current circuit (e.g. "explain how this capacitor affects the response", "what are the ways to
+  increase gain", "why is there distortion") — respond with:
+  {"type":"discussion","answer":"..."}
+  where "answer" is a concise, technically accurate plain-text response (no markdown).
+  You may reference the current netlist in your answer.
+
+Respond ONLY with valid JSON, no markdown fences, no explanation outside the JSON.`;
 
   const systemPrompt = isRefinement ? refinementPrompt : newCircuitPrompt;
 
@@ -968,10 +1027,12 @@ Respond ONLY with valid JSON, no markdown, no explanation outside JSON.`;
   if (conversationHistory.length > 10) conversationHistory.splice(0, 2);
 
   return {
-    netlist: parsed.netlist || '',
-    schema: parsed.schema || '',
+    type:        parsed.type || 'design',
+    netlist:     parsed.netlist || '',
+    schema:      parsed.schema || '',
     description: parsed.description || '',
     analysisType: parsed.analysis_type || 'tran',
+    answer:      parsed.answer || '',
   };
 }
 
